@@ -1,0 +1,73 @@
+Bootstrap: docker
+From: nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+Stage: builder
+
+%files
+    openfold-3/environments/production-linux-64.yml  /opt/openfold3/production-linux-64.yml
+    openfold-3/pyproject.toml                  /opt/openfold3/pyproject.toml
+    openfold-3/openfold3/__init__.py           /opt/openfold3/openfold3/__init__.py
+    openfold-3/scripts                         /opt/openfold3/scripts
+
+%post -c /bin/bash
+    set -euo pipefail
+    export DEBIAN_FRONTEND=noninteractive
+
+    # Build variables
+    : "${MINIFORGE_VERSION:=25.11.0-1}"
+    : "${TORCH_CUDA_ARCH_LIST:=9.0}"
+
+    apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        wget \
+        git \
+        build-essential \
+        ninja-build \
+        libopenmpi-dev \
+        libaio-dev \
+      && rm -rf /var/lib/apt/lists/*
+
+    # Install Miniforge with auto-arch detection
+    ARCH="$(uname -m)"
+    case "${ARCH}" in
+      x86_64)  MF_ARCH="x86_64" ;;
+      aarch64) MF_ARCH="aarch64" ;;
+      *) echo "Unsupported arch: ${ARCH}" && exit 1 ;;
+    esac
+
+    wget -q -O /tmp/Miniforge3.sh \
+      "https://github.com/conda-forge/miniforge/releases/download/${MINIFORGE_VERSION}/Miniforge3-Linux-${MF_ARCH}.sh"
+    bash /tmp/Miniforge3.sh -b -p /opt/conda
+    rm -f /tmp/Miniforge3.sh
+    export PATH=/opt/conda/bin:$PATH
+
+    # Install mamba for faster solving
+    mamba install -n base -c conda-forge mamba --yes
+    mamba clean --all --yes
+
+    # Create environment with verbose output
+    echo "Creating openfold3 environment..."
+    mamba env create -f /opt/openfold3/production-linux-64.yml \
+      --name openfold3 \
+      --verbose
+
+    # Activate and verify
+    source activate openfold3
+    python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA: {torch.cuda.is_available()}')"
+    
+    mamba clean --all --yes
+    conda clean --all --yes
+
+    # Install openfold3
+    cd /opt/openfold3
+    uv pip install --no-deps --editable .
+
+    # Install third-party deps (if script exists)
+    if [ -f /opt/openfold3/scripts/install_third_party_dependencies.sh ]; then
+      bash /opt/openfold3/scripts/install_third_party_dependencies.sh
+    fi
+
+%environment
+    export PATH=/opt/conda/envs/openfold3/bin:/opt/conda/bin:$PATH
+    export CONDA_PREFIX=/opt/conda/envs/openfold3
+    export CONDA_DEFAULT_ENV=openfold3
+    export TORCH_CUDA_ARCH_LIST=9.0

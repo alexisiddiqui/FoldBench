@@ -1,0 +1,51 @@
+{
+  "dialect": "alphafold3",
+  "version": 4,
+  "name": "5sbj-assembly1",
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "XYCSDCGADASQVRGGYCTNCGASADRIRX",
+        "modifications": [
+          {
+            "ptmType": "ACE",
+            "ptmPosition": 1
+          },
+          {
+            "ptmType": "AIB",
+            "ptmPosition": 10
+          },
+          {
+            "ptmType": "AIB",
+            "ptmPosition": 25
+          },
+          {
+            "ptmType": "NH2",
+            "ptmPosition": 30
+          }
+        ],
+        "unpairedMsa": ">101\nXYCSDCGADASQVRGGYCTNCGASADRIRX\n",
+        "pairedMsa": "",
+        "templates": []
+      }
+    },
+    {
+      "ligand": {
+        "id": "B",
+        "ccdCodes": [
+          "CD"
+        ]
+      }
+    }
+  ],
+  "modelSeeds": [
+    42,
+    66,
+    101,
+    2024,
+    8888
+  ],
+  "bondedAtomPairs": null,
+  "userCCD": null
+}

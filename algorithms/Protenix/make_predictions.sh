@@ -6,7 +6,7 @@ prediction_dir=$3
 evaluation_dir=$4
 gpu_id=$5
 
-PYTHON_PATH="/opt/conda/bin/python"
+PYTHON_PATH="/protenix_venv/bin/python"
 # convert af3 input data to model format
 $PYTHON_PATH ./preprocess.py --af3_input_json="$af3_input_json" --input_dir="$input_dir" 
 

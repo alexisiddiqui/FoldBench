@@ -1,0 +1,73 @@
+Bootstrap: docker
+From: nvidia/cuda:12.6.3-devel-ubuntu24.04
+%files
+    /lus/lfs1aip2/projects/u5fx/public/hussain/alphafold3/docker/jackhmmer_seq_limit.patch /hmmer_build/
+    /lus/lfs1aip2/projects/u5fx/public/hussain/alphafold3 /app/alphafold
+    . /algo
+%post
+    mkdir -p /host/nccl
+    
+    # Install system packages (allowing held packages to be changed)
+    DEBIAN_FRONTEND=noninteractive \
+    apt-get update --quiet \
+    && apt-get install --yes --quiet --no-install-recommends --allow-change-held-packages \
+        python3.12 python3-pip python3.12-venv python3.12-dev \
+        git wget gcc g++ make zlib1g-dev zstd \
+        libnccl2 libnccl-dev \
+        numactl
+    
+    # Create Python virtual environment
+    python3 -m venv /alphafold3_venv
+    /alphafold3_venv/bin/pip3 install --no-cache-dir --upgrade pip
+    
+    # Install HMMER
+    mkdir -p /hmmer_build /hmmer
+    wget http://eddylab.org/software/hmmer/hmmer-3.4.tar.gz --directory-prefix /hmmer_build
+    cd /hmmer_build && echo "ca70d94fd0cf271bd7063423aabb116d42de533117343a9b27a65c17ff06fbf3 hmmer-3.4.tar.gz" | sha256sum --check
+    cd /hmmer_build && tar zxf hmmer-3.4.tar.gz && rm hmmer-3.4.tar.gz
+    cd /hmmer_build && patch -p0 < jackhmmer_seq_limit.patch
+    cd /hmmer_build/hmmer-3.4 && ./configure --prefix /hmmer
+    cd /hmmer_build/hmmer-3.4 && make -j$(nproc)
+    cd /hmmer_build/hmmer-3.4 && make install
+    cd /hmmer_build/hmmer-3.4/easel && make install
+    rm -R /hmmer_build
+    
+    # Install AlphaFold 3 dependencies
+    cd /app/alphafold
+    /alphafold3_venv/bin/pip3 install --no-cache-dir setuptools wheel
+    
+    # Install JAX with CUDA 12 support
+    /alphafold3_venv/bin/pip3 install --no-cache-dir --upgrade \
+        "jax[cuda12]" \
+        -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+    
+    /alphafold3_venv/bin/pip3 install --no-cache-dir .
+    
+    # Build chemical components database
+    /alphafold3_venv/bin/build_data
+    
+    chmod +x /algo/make_predictions.sh
+    
+    # Cleanup
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+%environment
+    export PATH="/hmmer/bin:/alphafold3_venv/bin:$PATH"
+    
+    # GH200 Hopper optimizations
+    export XLA_FLAGS="--xla_gpu_enable_triton_gemm=false"
+    export XLA_PYTHON_CLIENT_PREALLOCATE=false
+    export XLA_CLIENT_MEM_FRACTION=0.90
+    export TF_GPU_THREAD_MODE=gpu_private
+    export TF_GPU_THREAD_COUNT=8
+    
+    # NCCL for Grace-Hopper NVLink-C2C
+    export NCCL_NVLS_ENABLE=1
+    export NCCL_NET_GDR_LEVEL=5
+    export CUDA_DEVICE_ORDER=PCI_BUS_ID
+%runscript
+    cd /app/alphafold
+    exec python3 run_alphafold.py "$@"
+%labels
+    Author AlphaFold3_Team
+    Version 1.0_GH200
+    Architecture arm64

@@ -1,0 +1,8 @@
+experiment_settings:
+  seeds: [42, 66, 101, 2024, 8888]
+  use_templates: false
+
+model_update:
+  presets:
+    - predict
+    - pae_enabled

@@ -1,40 +1,68 @@
 Bootstrap: docker
-From: ai4s-cn-beijing.cr.volces.com/pytorch-mirror/pytorch:2.3.1-cuda12.1-cudnn8-devel
-
-
-%environment
-    # Define system variables to provide GPU access within the container.
-    export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
-
-    # Define python path
-    export PYTHON=/opt/conda/bin/python
+From: nvidia/cuda:12.6.3-devel-ubuntu24.04
 
 %files
-    # Copy algorithm-related files to a separate dir /algo.
-    # Don't change the dir name.
-    algorithms/Protenix /algo
-    algorithms/base /algo/base
+    . /algo
 
 %post
-    # Download algorithm source code
-    cd /algo
+    mkdir -p /host/nccl
 
-    # from github
-    # git clone https://github.com/bytedance/Protenix.git
-    # cd ./Protenix
-    # pip install -e .
+    # Install system packages
+    DEBIAN_FRONTEND=noninteractive \
+    apt-get update --quiet \
+    && apt-get install --yes --quiet --allow-change-held-packages \
+        python3.12 python3-pip python3.12-venv python3.12-dev \
+        git wget gcc g++ make zlib1g-dev \
+        libnccl2 libnccl-dev \
+        numactl
 
-    # from local source code
-    cd ./Protenix
-    # pip install -e . 
-    pip install -e .
-    
-    # from pip
-    # pip install protenix
+    # Create Python virtual environment
+    python3 -m venv /protenix_venv
+    /protenix_venv/bin/pip3 install --no-cache-dir --upgrade pip setuptools wheel
 
-%post
-    # Make sure make_predictions.sh file is executable.
-    chmod +x /algo/make_predictions.sh
+    # Install PyTorch for arm64/aarch64 (CUDA 12.6 aarch64 wheels)
+    /protenix_venv/bin/pip3 install --no-cache-dir \
+        torch>=2.7.0 \
+        --index-url https://download.pytorch.org/whl/cu126
 
-# Run algorithm and convert outputs.
-# Data is expected to be mounted into /algo/data dir.
+    # Install Protenix from local source
+    cd /algo/Protenix && \
+    /protenix_venv/bin/pip3 install -e . && \
+
+    # Make pipeline script executable
+    chmod +x /algo/make_predictions.sh && \
+
+    # Cleanup
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+%environment
+    export PATH="/protenix_venv/bin:$PATH"
+    export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+    export PYTHON=/protenix_venv/bin/python
+    export CUDA_DEVICE_ORDER=PCI_BUS_ID
+
+    # GH200 Grace-Hopper NVLink-C2C optimizations
+    export NCCL_NVLS_ENABLE=1
+    export NCCL_NET_GDR_LEVEL=5
+    export NCCL_DEBUG=INFO
+
+    export CUDA_LAUNCH_BLOCKING=0
+    export CUDA_DEVICE_MAX_CONNECTIONS=32
+
+    export XLA_FLAGS="--xla_gpu_enable_triton_gemm=false"
+    export XLA_PYTHON_CLIENT_PREALLOCATE=false
+    export XLA_CLIENT_MEM_FRACTION=0.90
+
+    export TF_GPU_THREAD_MODE=gpu_private
+    export TF_GPU_THREAD_COUNT=8
+    export OMP_NUM_THREADS=12
+
+%labels
+    Author Protenix_Team
+    Version 0.3.2_GH200
+    Architecture arm64
+    Description Protenix - PyTorch reproduction of AlphaFold3 by ByteDance
+    CUDA_Version 12.6
+
+%runscript
+    exec /protenix_venv/bin/python "$@"

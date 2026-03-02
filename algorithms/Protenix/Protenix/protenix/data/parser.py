@@ -42,8 +42,8 @@ from protenix.data.utils import get_starts_by
 logger = logging.getLogger(__name__)
 
 # Ignore inter residue metal coordinate bonds in mmcif _struct_conn
-if "metalc" in pdbx_convert.PDBX_COVALENT_TYPES:  # for reload
-    pdbx_convert.PDBX_COVALENT_TYPES.remove("metalc")
+if "metalc" in pdbx_convert.PDBX_BOND_TYPE_ID_TO_TYPE:  # for reload
+    del pdbx_convert.PDBX_BOND_TYPE_ID_TO_TYPE["metalc"]
 
 
 class MMCIFParser:
