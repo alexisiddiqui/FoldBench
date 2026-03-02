@@ -24,7 +24,6 @@ algorithms/boltz2/boltz/*
 algorithms/helixfold/PaddleHelix/*
 
 
-
 algorithms/openfold3/openfold-3/*
 
 
@@ -34,3 +33,15 @@ algorithms/Protenix/Protenix/release_data/*
 
 *.sif
 *.pt
+
+*.pkl
+*.h5
+*.hdf5
+*.ckpt
+*.log
+*.out
+*.err
+*.tmp
+*.cache
+*.zip
+*.tar.gz
