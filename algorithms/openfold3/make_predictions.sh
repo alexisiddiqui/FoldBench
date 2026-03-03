@@ -15,7 +15,8 @@ $PYTHON_PATH /algo/preprocess.py --af3_input_json="$af3_input_json" --input_dir=
 # Step 2: Run OpenFold3 inference with specified seeds and PAE preset
 export CUDA_VISIBLE_DEVICES=$gpu_id
 
-$RUN_OF3 predict \
+# Auto-confirm any interactive prompts (e.g., for model weight downloads)
+yes | $RUN_OF3 predict \
     --query_json "$input_dir/inputs.json" \
     --num_diffusion_samples 5 \
     --runner_yaml /algo/runner.yaml \
