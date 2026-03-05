@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -euo pipefail
+
 af3_input_json=$1
 input_dir=$2
 prediction_dir=$3
@@ -16,12 +18,15 @@ $PYTHON_PATH /algo/preprocess.py --af3_input_json="$af3_input_json" --input_dir=
 export CUDA_VISIBLE_DEVICES=$gpu_id
 
 # Auto-confirm any interactive prompts (e.g., for model weight downloads)
+# Disable pipefail for this pipeline so SIGPIPE from `yes` doesn't mask a successful run_openfold exit.
+set +o pipefail
 yes | $RUN_OF3 predict \
     --query_json "$input_dir/inputs.json" \
     --num_diffusion_samples 5 \
     --runner_yaml /algo/runner.yaml \
-    --use_msa_server True \
+    --use_msa_server False \
     --output_dir "$prediction_dir"
+set -o pipefail
 
 # Step 3: Normalize CIFs and generate prediction_reference.csv
 $PYTHON_PATH /algo/postprocess.py \

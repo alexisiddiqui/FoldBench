@@ -13,12 +13,14 @@ class PreProcess():
     def __init__(self):
         super().__init__()
 
-    def format_single_input(self, input_data):
+    def format_single_input(self, input_data, input_dir, target_name):
         """
         Convert AF3 input data to Boltz YAML format.
 
         Args:
             input_data: single AF3 input dict
+            input_dir: directory to write MSA and template files
+            target_name: name of the target (for file naming)
 
         Returns:
             dict: Boltz YAML structure (ready for yaml.dump)
@@ -29,7 +31,7 @@ class PreProcess():
         }
 
         # Process each sequence in the AF3 input
-        for seq in input_data.get("sequences", []):
+        for seq_idx, seq in enumerate(input_data.get("sequences", [])):
             seq_type = next(iter(seq))  # protein, rna, dna, or ligand
             seq_content = seq[seq_type]
 
@@ -40,6 +42,27 @@ class PreProcess():
                         "sequence": seq_content.get("sequence", "")
                     }
                 }
+
+                # Extract and write MSA from AF3 JSON
+                chain_id = seq_content.get("id")
+                if isinstance(chain_id, list):
+                    chain_id = chain_id[0] if chain_id else f"chain_{seq_idx}"
+
+                unpaired_msa = seq_content.get("unpairedMsa")
+                paired_msa = seq_content.get("pairedMsa", "")
+
+                if unpaired_msa is not None:
+                    # Merge unpaired and paired MSAs
+                    merged_msa = unpaired_msa
+                    if paired_msa:
+                        merged_msa += "\n" + paired_msa
+
+                    # Write MSA to disk
+                    msa_path = os.path.join(input_dir, f"{target_name}_{chain_id}.a3m")
+                    os.makedirs(input_dir, exist_ok=True)
+                    with open(msa_path, "w") as f:
+                        f.write(merged_msa)
+                    protein_entry["protein"]["msa"] = msa_path
 
                 # Add modifications if present
                 modifications = []
@@ -124,7 +147,7 @@ class PreProcess():
 
         for entry in folding_inputs:
             pdb_id = entry["name"]
-            boltz_yaml = self.format_single_input(entry)
+            boltz_yaml = self.format_single_input(entry, input_dir, pdb_id)
 
             out_path = os.path.join(input_dir, f"{pdb_id}.yaml")
             with open(out_path, "w") as f:

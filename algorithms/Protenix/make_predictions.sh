@@ -14,6 +14,12 @@ $PYTHON_PATH ./preprocess.py --af3_input_json="$af3_input_json" --input_dir="$in
 # run inference
 
 export CUDA_VISIBLE_DEVICES=$gpu_id
+export DS_ACCELERATOR=cuda
+export TRITON_CACHE_DIR=$prediction_dir/.triton
+export TMPDIR=$prediction_dir/.tmp
+mkdir -p $TMPDIR
+mkdir -p $TRITON_CACHE_DIR
+
 N_sample=5
 N_step=200
 N_cycle=10
@@ -27,8 +33,7 @@ $PYTHON_PATH /algo/Protenix/runner/inference.py \
 --input_json_path $input_dir/inputs.json \
 --model.N_cycle ${N_cycle} \
 --sample_diffusion.N_sample ${N_sample} \
---sample_diffusion.N_step ${N_step}  \
---use_msa_server
+--sample_diffusion.N_step ${N_step}
 
 # Convert predictions to the general cif format, 
 # and generate evaluation prediction_reference.csv in evaluation_dir

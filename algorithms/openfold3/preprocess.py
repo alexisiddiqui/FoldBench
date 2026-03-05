@@ -13,17 +13,19 @@ class PreProcess():
     def __init__(self):
         super().__init__()
 
-    def format_single_input(self, input_data):
+    def format_single_input(self, input_data, input_dir, target_name):
         """Convert one AF3 target dict to an OF3 query dict.
 
         Args:
             input_data: single AF3 input dict with 'sequences' list
+            input_dir: directory to write MSA and template files
+            target_name: name of the target (for file naming)
 
         Returns:
             dict: OF3 query structure with 'chains' list
         """
         chains = []
-        for seq in input_data["sequences"]:
+        for seq_idx, seq in enumerate(input_data["sequences"]):
             seq_type = next(iter(seq))
             content = seq[seq_type]
             chain = {"molecule_type": seq_type}  # protein/rna/dna/ligand
@@ -33,6 +35,26 @@ class PreProcess():
                 chain_ids = content["id"] if isinstance(content["id"], list) else [content["id"]]
                 chain["chain_ids"] = chain_ids
                 chain["sequence"] = content["sequence"]
+
+                # Extract chain ID for MSA file naming
+                chain_id = chain_ids[0] if chain_ids else f"chain_{seq_idx}"
+
+                # Extract and write MSA from AF3 JSON
+                unpaired_msa = content.get("unpairedMsa")
+                paired_msa = content.get("pairedMsa", "")
+
+                if unpaired_msa is not None:
+                    # Merge unpaired and paired MSAs
+                    merged_msa = unpaired_msa
+                    if paired_msa:
+                        merged_msa += "\n" + paired_msa
+
+                    # Write MSA to disk
+                    msa_path = os.path.join(input_dir, f"{target_name}_{chain_id}.a3m")
+                    os.makedirs(input_dir, exist_ok=True)
+                    with open(msa_path, "w") as f:
+                        f.write(merged_msa)
+                    chain["msa_path"] = msa_path
 
                 # Convert modifications to non_canonical_residues
                 mods = {}
@@ -72,7 +94,7 @@ class PreProcess():
         queries = {}
 
         for entry in tqdm(folding_inputs):
-            queries[entry["name"]] = self.format_single_input(entry)
+            queries[entry["name"]] = self.format_single_input(entry, input_dir, entry["name"])
 
         output = {"queries": queries}
         output_path = os.path.join(input_dir, "inputs.json")

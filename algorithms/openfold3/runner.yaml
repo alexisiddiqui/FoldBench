@@ -1,6 +1,6 @@
 experiment_settings:
   seeds: [42, 66, 101, 2024, 8888]
-  use_templates: false
+  use_templates: true
 
 model_update:
   presets:

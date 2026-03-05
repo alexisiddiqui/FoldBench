@@ -14,12 +14,12 @@ class PreProcess():
     def __init__(self):
         super().__init__()
     
-    def format_single_input(self, input_data):
+    def format_single_input(self, input_data, input_dir, target_name):
         tmp_seq_data={}
         tmp_seq_data['name']= input_data['name']
         tmp_seq_data["sequences"]=[]
 
-        for seq in input_data['sequences']: # seq is a dict
+        for seq_idx, seq in enumerate(input_data['sequences']): # seq is a dict
             tmp_seq={}
 
             seq_type = next(iter(seq))
@@ -29,10 +29,28 @@ class PreProcess():
                 tmp_seq["proteinChain"]['sequence']=seq[seq_type]['sequence']
                 if isinstance(seq[seq_type]['id'],list):
                     tmp_seq["proteinChain"]['count']=len(seq[seq_type]['id'])
+                    chain_id = seq[seq_type]['id'][0]
                 else:
                     tmp_seq["proteinChain"]['count']=1
-                
-                
+                    chain_id = seq[seq_type]['id']
+
+                # Extract and write MSA from AF3 JSON
+                unpaired_msa = seq[seq_type].get("unpairedMsa")
+                paired_msa = seq[seq_type].get("pairedMsa", "")
+
+                if unpaired_msa is not None:
+                    # Merge unpaired and paired MSAs
+                    merged_msa = unpaired_msa
+                    if paired_msa:
+                        merged_msa += "\n" + paired_msa
+
+                    # Write MSA to disk
+                    msa_path = os.path.join(input_dir, f"{target_name}_{chain_id}.a3m")
+                    os.makedirs(input_dir, exist_ok=True)
+                    with open(msa_path, "w") as f:
+                        f.write(merged_msa)
+                    tmp_seq["proteinChain"]["msa"] = msa_path
+
                 # add modification
                 tmp_seq["proteinChain"]['modifications']=[]
                 for modification in seq[seq_type]['modifications']:
@@ -98,13 +116,14 @@ class PreProcess():
 
         with open(af3_input_json_path, "r") as f:
             folding_inputs = json.load(f)
-        
-        
+
+        os.makedirs(input_dir, exist_ok=True)
+
         mapped_folding_inputs = [
-            self.format_single_input(folding_inputs[i])
+            self.format_single_input(folding_inputs[i], input_dir, folding_inputs[i]['name'])
             for i in tqdm(range(len(folding_inputs)))
         ]
-    
+
         with open(f'{input_dir}/inputs.json', "w") as f:
             json.dump(mapped_folding_inputs, f,indent = 4)
         print(

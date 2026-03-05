@@ -27,7 +27,6 @@ for seed in $seeds; do
     /boltz_venv/bin/boltz predict "$input_dir" \
         --out_dir "${prediction_dir}/seed_${seed}" \
         --seed $seed \
-        --use_msa_server \
         --recycling_steps 10 \
         --diffusion_samples 5 \
         --sampling_steps 200 \
