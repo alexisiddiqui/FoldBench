@@ -1,9 +1,11 @@
 Bootstrap: docker
 From: nvidia/cuda:12.6.3-devel-ubuntu24.04
-%files
-    /lus/lfs1aip2/projects/u5fx/public/hussain/alphafold3/docker/jackhmmer_seq_limit.patch /hmmer_build/
-    /lus/lfs1aip2/projects/u5fx/public/hussain/alphafold3 /app/alphafold
-    . /algo
+%files                                                                                                                                 
+    /lus/lfs1aip2/projects/u5fx/public/hussain/alphafold3/docker/jackhmmer_seq_limit.patch /hmmer_build/                               
+    /lus/lfs1aip2/projects/u5fx/public/hussain/alphafold3 /app/alphafold                                                               
+    make_predictions.sh /algo/                                                                                                         
+    preprocess.py /algo/                                                                                                               
+    postprocess.py /algo/  
 %post
     mkdir -p /host/nccl
     
@@ -42,7 +44,10 @@ From: nvidia/cuda:12.6.3-devel-ubuntu24.04
         -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
     
     /alphafold3_venv/bin/pip3 install --no-cache-dir .
-    
+
+    # Install additional dependencies for postprocessing
+    /alphafold3_venv/bin/pip3 install --no-cache-dir pandas biotite tqdm
+
     # Build chemical components database
     /alphafold3_venv/bin/build_data
     

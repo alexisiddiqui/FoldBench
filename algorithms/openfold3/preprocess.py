@@ -44,17 +44,20 @@ class PreProcess():
                 paired_msa = content.get("pairedMsa", "")
 
                 if unpaired_msa is not None:
-                    # Merge unpaired and paired MSAs
-                    merged_msa = unpaired_msa
-                    if paired_msa:
-                        merged_msa += "\n" + paired_msa
+                    # Write to per-chain subdir with names matching max_seq_counts keys
+                    chain_msa_dir = os.path.join(input_dir, chain_id)
+                    os.makedirs(chain_msa_dir, exist_ok=True)
 
-                    # Write MSA to disk
-                    msa_path = os.path.join(input_dir, f"{target_name}_{chain_id}.a3m")
-                    os.makedirs(input_dir, exist_ok=True)
+                    msa_path = os.path.join(chain_msa_dir, "uniref90_hits.a3m")
                     with open(msa_path, "w") as f:
-                        f.write(merged_msa)
-                    chain["msa_path"] = msa_path
+                        f.write(unpaired_msa)
+                    chain["main_msa_file_paths"] = [msa_path]
+
+                    if paired_msa:
+                        paired_msa_path = os.path.join(chain_msa_dir, "uniprot_hits.a3m")
+                        with open(paired_msa_path, "w") as f:
+                            f.write(paired_msa)
+                        chain["paired_msa_file_paths"] = [paired_msa_path]
 
                 # Convert modifications to non_canonical_residues
                 mods = {}

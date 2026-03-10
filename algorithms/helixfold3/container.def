@@ -2,174 +2,190 @@ Bootstrap: docker
 From: nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
 
 %post
-    # Install system packages
-    DEBIAN_FRONTEND=noninteractive \
-    apt-get update --quiet && \
-    apt-get install --yes --quiet --no-install-recommends \
-        wget git curl \
-        aria2 \
-        build-essential \
-        pkg-config \
-        libopenbabel-dev \
-        numactl && \
-    
-    # Install Miniforge
-    wget -q -P /tmp "https://github.com/conda-forge/miniforge/releases/download/24.11.0-0/Miniforge3-$(uname)-$(uname -m).sh" && \
-    bash /tmp/Miniforge3-$(uname)-$(uname -m).sh -b -p /conda && \
-    rm -f /tmp/Miniforge3-$(uname)-$(uname -m).sh && \
-    
-    # Initialize conda
-    /conda/bin/conda init bash && \
-    /conda/bin/conda config --system --prepend channels conda-forge && \
-    /conda/bin/conda config --system --prepend channels bioconda && \
-    
-    # Create conda environment with Python 3.10 
-    # NOTE: Pinning numpy<2.0 for PGL and other legacy packages compatibility
+    set -e
+
+    # FIX 1: fontconfig-config post-install chowns /usr/local/share/fonts,
+    # which fails in rootless Apptainer. Pre-create with open perms to fix.
+    mkdir -p /usr/local/share/fonts
+    chmod 1777 /usr/local/share/fonts
+
+    DEBIAN_FRONTEND=noninteractive apt-get update --quiet
+
+    # FIX 2: Use || true so a dpkg configure error does NOT abort the script.
+    # The original script used && chaining, so apt exit 1 killed everything
+    # before Miniforge was ever downloaded -- that is why mamba was never found.
+    DEBIAN_FRONTEND=noninteractive apt-get install --yes --quiet \
+        --no-install-recommends \
+        wget git curl aria2 unzip build-essential pkg-config libopenbabel-dev numactl || true
+
+    # Finish partially-configured packages (fontconfig, libopenbabel, etc.)
+    DEBIAN_FRONTEND=noninteractive dpkg --configure -a || true
+
+    # Hard abort only if wget itself failed to install
+    which wget || { echo "FATAL: wget not installed"; exit 1; }
+
+    # Install Miniforge (now guaranteed to be reached)
+    wget -q -P /tmp \
+        "https://github.com/conda-forge/miniforge/releases/download/24.11.0-0/Miniforge3-$(uname)-$(uname -m).sh"
+    bash /tmp/Miniforge3-$(uname)-$(uname -m).sh -b -p /conda
+    rm -f /tmp/Miniforge3-$(uname)-$(uname -m).sh
+
+    /conda/bin/conda init bash
+    /conda/bin/conda config --system --prepend channels conda-forge
+    /conda/bin/conda config --system --prepend channels bioconda
+
+    # Create helixfold env (numpy<2.0 for PGL and legacy package compatibility)
     /conda/bin/mamba create -y -n helixfold \
-        python=3.10 \
-        numpy'<2.0' \
+        python=3.11 \
+        "numpy<2.0" \
         pandas \
         networkx \
         scipy \
         scikit-learn \
+        biotite \
         openbabel \
         pyyaml \
         wheel \
         setuptools \
-        pip && \
-    
-    # Install PGL from conda-forge (more reliable than pip for this package)
+        pip \
+        ml-collections \
+        absl-py \
+        "biopython=1.79" \
+        tqdm \
+        immutabledict \
+        jsonschema
+
+    # PGL: try conda-forge, fall back to pip, skip if unavailable
     /conda/bin/mamba install -y -c conda-forge -n helixfold pgl || \
-    echo "Note: PGL from conda-forge not available, will try pip" && \
-    
-    # If conda failed, try pip with numpy pre-installed and compatibility flags
-    /conda/bin/mamba run -n helixfold pip install --no-cache-dir pgl \
-        --no-build-isolation --ignore-installed 2>&1 || \
-    echo "Note: PGL installation skipped (not critical for basic HelixFold3)" && \
-    
-    # Install PaddlePaddle CPU (most reliable for ARM64)
-    /conda/bin/mamba run -n helixfold pip install --no-cache-dir paddlepaddle && \
-    
-    # Clone HelixFold3 repository
-    rm -rf /opt/helixfold3 && \
-    git clone --depth=1 --filter=blob:none --sparse https://github.com/PaddlePaddle/PaddleHelix.git /opt/helixfold3 && \
-    cd /opt/helixfold3 && \
-    git sparse-checkout add apps/protein_folding/helixfold3 && \
-    cd apps/protein_folding/helixfold3 && \
-    \
-    # Move helixfold3 contents to parent directory
-    mv LICENSE README.md data demo_output helixfold helixfold3_report.pdf images infer_scripts inference.py requirements.txt run_infer.sh scripts utils /opt/helixfold3/ 2>/dev/null || true && \
-    cd /opt/helixfold3 && \
-    rm -rf apps && \
-    
-    # FIX 1: Install updated dm-tree (0.1.9+) that has precompiled wheels for aarch64
-    # This avoids the Bazel compilation requirement from dm-tree 0.1.6
-    /conda/bin/mamba run -n helixfold pip install --no-cache-dir \
-        'dm-tree>=0.1.9' --no-build-isolation --ignore-installed || \
-    echo "Note: dm-tree installation attempted with latest version" && \
-    
-    # Install bioconda tools (aligners and utilities)
-    # FIX 2: Try both bioconda and conda-forge channels for better availability
-    /conda/bin/mamba install -y -c bioconda \
-        -n helixfold \
-        hmmer \
-        hhsuite \
-        aria2 2>&1 || \
-    echo "Note: Some bioconda tools unavailable from bioconda channel" && \
-    \
-    /conda/bin/mamba install -y -c conda-forge \
-        -n helixfold \
-        hmmer \
-        hhsuite 2>&1 || \
-    echo "Note: Some alignment tools may not be available - inference will still work" && \
-    
-    # FIX 3: Install HelixFold3 requirements with fallback handling
-    if [ -f /opt/helixfold3/requirements.txt ]; then \
-        echo "Installing HelixFold3 requirements..." && \
-        \
-        # First, try upgrading pip/wheel/setuptools to handle modern packages
-        /conda/bin/mamba run -n helixfold pip install --no-cache-dir \
-            --upgrade pip wheel setuptools && \
-        \
-        # Create modified requirements that skip problematic packages
-        # Remove dm-tree from requirements since we installed separately
-        grep -v "^dm-tree" /opt/helixfold3/requirements.txt > /tmp/requirements_fixed.txt && \
-        \
-        /conda/bin/mamba run -n helixfold pip install --no-cache-dir \
-        -r /tmp/requirements_fixed.txt \
-        --no-build-isolation 2>&1 || \
-        echo "Some requirements could not be installed - this may be expected"; \
-    fi && \
-    
-    # Create symbolic links for compatibility
-    mkdir -p /opt/conda/bin && \
-    ln -sf /conda/envs/helixfold/bin/python /opt/conda/bin/python && \
-    
-    # Verify installation
-    echo "=== Verification ===" && \
-    /conda/bin/mamba run -n helixfold python -c "import paddle; print(f'✓ PaddlePaddle {paddle.__version__}')" && \
-    /conda/bin/mamba run -n helixfold python -c "import numpy, scipy; print('✓ NumPy + SciPy')" && \
-    /conda/bin/mamba run -n helixfold python -c "import dm_tree; print('✓ dm-tree')" 2>&1 || \
-    echo "⚠ dm-tree not available but non-critical" && \
-    ls -1 /opt/helixfold3/ | head -5 && echo "✓ HelixFold3 installed" && \
-    \
-    # Cleanup
-    /conda/bin/mamba clean --all --force-pkgs-dirs -y && \
-    rm -rf /root/.cache /tmp/paddle_build /tmp/requirements_fixed.txt && \
-    apt-get autoremove -y && \
-    apt-get clean -y
+    /conda/bin/mamba run -n helixfold python -m pip install --no-cache-dir pgl \
+        --no-build-isolation --ignore-installed || \
+    echo "Note: PGL skipped (non-critical)"
+
+    # Install posebusters via pip
+    /conda/bin/mamba run -n helixfold python -m pip install --no-cache-dir posebusters || \
+    echo "Note: posebusters skipped (optional)"
+
+    # PaddlePaddle CPU
+    /conda/bin/mamba run -n helixfold python -m pip install --no-cache-dir paddlepaddle
+
+    # FIX 3: Remove stale checkout dir to avoid "already exists" git error
+    rm -rf /opt/helixfold3_repo
+    git clone --depth=1 --filter=blob:none --sparse \
+        https://github.com/PaddlePaddle/PaddleHelix.git /opt/helixfold3_repo
+    cd /opt/helixfold3_repo
+    git sparse-checkout add apps/protein_folding/helixfold3
+    rm -rf /opt/helixfold3
+    mkdir -p /opt/helixfold3
+    cp -r /opt/helixfold3_repo/apps/protein_folding/helixfold3/. /opt/helixfold3/
+    rm -rf /opt/helixfold3_repo
+
+    # Download and pin required HelixFold3 runtime assets inside the container.
+    HF3_ASSET_DIR="/opt/helixfold3_assets"
+    mkdir -p "${HF3_ASSET_DIR}"
+    bash /opt/helixfold3/scripts/download_helixfold3_checkpoints.sh "${HF3_ASSET_DIR}"
+    bash /opt/helixfold3/scripts/download_ccd_pkl.sh "${HF3_ASSET_DIR}"
+    HF3_MODEL="$(find "${HF3_ASSET_DIR}/params" -type f -name 'HelixFold3-*.pdparams' | head -n 1 || true)"
+    if [ -z "${HF3_MODEL}" ]; then
+        HF3_MODEL="$(find "${HF3_ASSET_DIR}/params" -type f -name '*.pdparams' | head -n 1 || true)"
+    fi
+    [ -n "${HF3_MODEL}" ] && [ -f "${HF3_MODEL}" ] || { echo "FATAL: HelixFold3 checkpoint missing"; exit 1; }
+    [ -f "${HF3_ASSET_DIR}/ccd_preprocessed_etkdg.pkl.gz" ] || { echo "FATAL: CCD preprocessed file missing"; exit 1; }
+    ln -sf "${HF3_MODEL}" "${HF3_ASSET_DIR}/helixfold3_model.pdparams"
+
+    # FIX 4: dm-tree precompiled wheel >=0.1.9 avoids Bazel build on aarch64
+    /conda/bin/mamba run -n helixfold python -m pip install --no-cache-dir \
+        "dm-tree>=0.1.9,<0.2" || echo "Note: dm-tree unavailable"
+
+    # Alignment tools
+    /conda/bin/mamba install -y -c bioconda -n helixfold hmmer hhsuite || \
+    /conda/bin/mamba install -y -c conda-forge -n helixfold hmmer hhsuite || \
+    echo "Note: alignment tools unavailable - inference may be limited"
+
+    # FIX 5: Filter requirements.txt before installing.
+    # Stripped:
+    #   dm-tree        already installed above with correct version range
+    #   jax==, jaxlib  old pins have no prebuilt aarch64 wheels
+    #   tensorflow-cpu replaced by paddlepaddle in this container
+    #   dm-haiku, chex depend on incompatible old jax versions
+    #   etcd3          optional; install manually at runtime if needed
+    #   ./paddle*.whl  local path not present in the Apptainer build context
+    if [ -f /opt/helixfold3/requirements.txt ]; then
+        echo "Installing filtered HelixFold3 requirements..."
+        # Ensure setuptools (pkg_resources) is present via conda to avoid metadata/build errors
+        /conda/bin/mamba install -y -n helixfold setuptools || true
+
+        /conda/bin/mamba run -n helixfold python -m pip install --no-cache-dir \
+            --upgrade pip wheel setuptools
+        grep -vE "^(dm-tree|jax==|jaxlib|tensorflow|dm-haiku|chex|etcd3|\./paddle)" \
+            /opt/helixfold3/requirements.txt > /tmp/requirements_fixed.txt
+        /conda/bin/mamba run -n helixfold python -m pip install --no-cache-dir \
+            -r /tmp/requirements_fixed.txt --no-build-isolation && \
+        /conda/bin/mamba run -n helixfold python -m pip install --no-cache-dir ml-collections || \
+            echo "Warning: some requirements could not be installed"
+        rm -f /tmp/requirements_fixed.txt
+    fi
+
+    mkdir -p /opt/conda/bin
+    ln -sf /conda/envs/helixfold/bin/python /opt/conda/bin/python
+
+    echo "=== Verification ==="
+    /conda/bin/mamba run -n helixfold python -c \
+        "import paddle; print('PaddlePaddle', paddle.__version__, 'OK')"
+    /conda/bin/mamba run -n helixfold python -c \
+        "import numpy, scipy; print('NumPy + SciPy OK')"
+    /conda/bin/mamba run -n helixfold python -c \
+        "import ml_collections; print('ml_collections OK')" || echo "WARNING: ml_collections unavailable"
+    /conda/bin/mamba run -n helixfold python -c \
+        "import dm_tree; print('dm-tree OK')" || echo "WARNING: dm-tree unavailable"
+    ls /opt/helixfold3/ | head -5 && echo "HelixFold3 files present"
+
+    /conda/bin/mamba clean --all --force-pkgs-dirs -y
+    rm -rf /root/.cache /tmp/paddle_build
+    apt-get autoremove -y && apt-get clean -y
 
 %environment
-    export PATH="/conda/bin:/opt/helixfold3:./maxit_src/bin:/conda/envs/helixfold/bin:$PATH"
-    export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+    export PATH="/conda/bin:/opt/helixfold3:/conda/envs/helixfold/bin:$PATH"
+    export LD_LIBRARY_PATH=/conda/envs/helixfold/lib:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
     export RCSBROOT="./maxit_src"
     export MAXIT_SRC="./maxit_src"
     export PYTHON_BIN="/conda/envs/helixfold/bin/python"
     export ENV_BIN="/conda/envs/helixfold/bin"
     export OBABEL_BIN="/conda/envs/helixfold/bin"
+    export HF3_ASSET_DIR="/opt/helixfold3_assets"
+    export HF3_INIT_MODEL="/opt/helixfold3_assets/helixfold3_model.pdparams"
+    export HF3_CCD_PREPROCESSED_PATH="/opt/helixfold3_assets/ccd_preprocessed_etkdg.pkl.gz"
     export CONDA_DEFAULT_ENV="helixfold"
-    
     export CUDA_DEVICE_ORDER=PCI_BUS_ID
-    
-    # GH200 Hopper optimizations
     export NCCL_NVLS_ENABLE=1
     export NCCL_NET_GDR_LEVEL=5
     export NCCL_DEBUG=INFO
-    
     export CUDA_LAUNCH_BLOCKING=0
     export CUDA_DEVICE_MAX_CONNECTIONS=32
-    
     export TF_GPU_THREAD_MODE=gpu_private
     export TF_GPU_THREAD_COUNT=8
     export OMP_NUM_THREADS=12
 
 %labels
     Author HelixFold3_Team_GH200
-    Version 3.0_GH200_Fixed_v2
+    Version 3.0_GH200_Fixed_v3
     Architecture arm64
-    Description HelixFold3 for NVIDIA GH200 Grace-Hopper (ARM64) with PaddlePaddle CPU - Fixed dependencies
+    Description HelixFold3 for GH200 ARM64 - fixed apt/fontconfig, mamba order, git clone, dm-tree wheel, requirements filter
     CUDA_Version 12.8.1
-    Changes "Fixed dm-tree compilation issue, added NumPy version pinning, improved error handling"
 
 %help
-    HelixFold3 Container for NVIDIA GH200 Hopper
-    
-    This container includes:
-    - PaddlePaddle 3.2.2
-    - Python 3.10
-    - CUDA 12.8.1 + cuDNN
-    - HelixFold3 source code
-    - Protein sequence alignment tools (HMMer, HHsuite)
-    
+    HelixFold3 for NVIDIA GH200 Hopper (ARM64)
+
     Usage:
         singularity exec container.sif python /opt/helixfold3/inference.py \
-            --input_fasta sequence.fasta \
-            --output_dir results/
-    
-    Known issues fixed:
-        - dm-tree: Now uses precompiled wheels (v0.1.9+)
-        - PGL: Gracefully skipped if unavailable
-        - NumPy: Pinned to <2.0 for legacy package compatibility
+            --input_fasta seq.fasta --output_dir results/
+
+    Fixes (v3):
+      - fontconfig chown error: mkdir -p + chmod 1777 workaround
+      - mamba not found (root cause): apt-get was aborting before Miniforge
+        installed; separated with || true so Miniforge always runs
+      - git clone collision from partial prior build: rm -rf before clone
+      - dm-tree: precompiled wheel >=0.1.9,<0.2 (no Bazel required)
+      - requirements.txt: strips jax/tensorflow/dm-haiku/chex + local .whl
 
 %runscript
     exec /conda/bin/mamba run --name helixfold "$@"

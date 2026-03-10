@@ -122,7 +122,6 @@ for target_json in "${target_jsons[@]}"; do
             --init_model "$INIT_MODEL" \
             --ccd_preprocessed_path "$CCD_PREPROCESSED_PATH" \
             --preset reduced_dbs \
-            --msa_dir "$input_dir" \
             --reduced_bfd_database_path "$PLACEHOLDER_DIR/db.fasta" \
             --uniprot_database_path "$PLACEHOLDER_DIR/db.fasta" \
             --pdb_seqres_database_path "$PLACEHOLDER_DIR/pdb_seqres.txt" \

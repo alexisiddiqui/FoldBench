@@ -22,16 +22,18 @@ print(' '.join(str(s) for s in seeds))
 
 export CUDA_VISIBLE_DEVICES=$gpu_id
 
-# Step 3: Run Boltz inference once per seed (5 diffusion samples per seed)
+# Step 3: Run Boltz inference per yaml file per seed (avoids msa/ subdir being scanned)
 for seed in $seeds; do
-    /boltz_venv/bin/boltz predict "$input_dir" \
-        --out_dir "${prediction_dir}/seed_${seed}" \
-        --seed $seed \
-        --recycling_steps 10 \
-        --diffusion_samples 5 \
-        --sampling_steps 200 \
-        --output_format mmcif \
-        --override
+    for yaml_file in "$input_dir"/*.yaml; do
+        /boltz_venv/bin/boltz predict "$yaml_file" \
+            --out_dir "${prediction_dir}/seed_${seed}" \
+            --seed $seed \
+            --recycling_steps 10 \
+            --diffusion_samples 5 \
+            --sampling_steps 200 \
+            --output_format mmcif \
+            --override
+    done
 done
 
 # Step 4: Normalize CIFs and generate prediction_reference.csv

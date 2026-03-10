@@ -57,9 +57,10 @@ class PreProcess():
                     if paired_msa:
                         merged_msa += "\n" + paired_msa
 
-                    # Write MSA to disk
-                    msa_path = os.path.join(input_dir, f"{target_name}_{chain_id}.a3m")
-                    os.makedirs(input_dir, exist_ok=True)
+                    # Write MSA to a subdirectory so boltz predict doesn't pick up .a3m files
+                    msa_dir = os.path.join(input_dir, "msa")
+                    os.makedirs(msa_dir, exist_ok=True)
+                    msa_path = os.path.join(msa_dir, f"{target_name}_{chain_id}.a3m")
                     with open(msa_path, "w") as f:
                         f.write(merged_msa)
                     protein_entry["protein"]["msa"] = msa_path

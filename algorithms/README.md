@@ -39,6 +39,9 @@ This script standardizes your model's output for evaluation. It must contain a `
 1.  **Generate Prediction Summary:** Create a summary file named `prediction_reference.csv` in the evaluation directory: `./outputs/evaluation/{algorithm_name}/prediction_reference.csv`. This CSV file is **required** for the benchmark and must include the following columns: `pdb_id`, `seed`, `sample`, `ranking_score`, and `prediction_path`.
 2.  **Format for Evaluation:** Convert your model's raw output files (located in `./outputs/prediction/{algorithm_name}/`) into a format compatible with our evaluation tools ([OpenStructure](https://git.scicore.unibas.ch/schwede/openstructure) and [DockQ](https://github.com/bjornwallner/DockQ)).
 
+### Runtime note for HelixFold3 integration
+The reference `algorithms/helixfold3` integration runs in precomputed-input mode and expects HelixFold3 model assets inside the container image. No extra host-side MSA/template database bindings are required for this integration path.
+
 ---
 
 ## Running the Benchmark

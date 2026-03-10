@@ -1,0 +1,61 @@
+name: openfold3-env
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - bioconda
+dependencies:
+  # Core Python stack
+  - python=3.12
+  - pip
+  - setuptools
+  - conda-forge::uv
+
+  # PyTorch (linux-aarch64): use conda-forge builds.
+  # pytorch::pytorch-cuda is not available for this target.
+  - conda-forge::pytorch
+  - conda-forge::pytorch-lightning
+  - conda-forge::torchvision
+  - conda-forge::torchaudio
+
+  # CUDA runtime only; cuDNN comes from the CUDA base image.
+  - nvidia::cuda-runtime=12.6
+
+  # Bioinformatics & ML
+  - biopython
+  - biotite>=1.1.0
+  - rdkit>=2024.03          # 2025.09.3 has no linux-aarch64 build; relax constraint
+  - modelcif
+  - ml-collections
+  - mmseqs2
+
+  # Bioconda tools
+  - bioconda::hmmer
+  - bioconda::hhsuite
+  - bioconda::kalign2
+  - bioconda::snakemake
+
+  # Numerical / data stack
+  - numpy
+  - scipy
+  - pandas
+  - openblas                # MKL has no aarch64 build; openblas is correct here
+
+  # Utilities
+  - pyyaml                  # lowercase avoids solver warnings
+  - requests
+  - tqdm
+  - typing-extensions
+  - wandb
+  - memory_profiler
+  - func_timeout
+  - boto3
+  - awscli
+  - conda-forge::python-lmdb=1.6
+  - conda-forge::ijson
+
+  # Pip installs (single pip entry at end)
+  - pip:
+    - pdbeccdutils
+    # deepspeed has no pre-built aarch64 wheel — build from source:
+    - "deepspeed @ git+https://github.com/microsoft/DeepSpeed.git"

@@ -1,5 +1,5 @@
 Bootstrap: docker
-From: nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+From: nvidia/cuda:12.6.1-cudnn-devel-ubuntu22.04
 Stage: builder
 
 %files
@@ -53,10 +53,76 @@ Stage: builder
 
     # Activate and verify
     source activate openfold3
-    python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}')"
+
+    # Override CPU-only conda-forge PyTorch with CUDA 12.6 pip wheels (aarch64 available since 2.6.0)
+    pip install --root-user-action=ignore --force-reinstall --no-deps \
+        torch==2.6.0+cu126 \
+        --index-url https://download.pytorch.org/whl/cu126
+
+    # Keep torchvision aligned with torch. On aarch64 only 0.25.0+cu126 is published.
+    # Try the binary wheel first; if import fails, rebuild from source.
+    TV_TAG="v0.25.0"
+    if pip install --root-user-action=ignore --force-reinstall --no-deps \
+        torchvision==0.25.0+cu126 \
+        --index-url https://download.pytorch.org/whl/cu126; then
+        : # wheel installed, will verify below
+    else
+        TV_TAG="main"
+    fi
+
+    # Verify torchvision can be imported. If not, rebuild from source matching the chosen tag.
+    if ! python - <<'PY'
+import sys
+try:
+    import torch, torchvision
+except Exception as e:
+    print("TOOLKIT_IMPORT_ERROR:", e, file=sys.stderr)
+    sys.exit(1)
+else:
+    print("TOOLKIT_OK")
+    sys.exit(0)
+PY
+    then
+        echo "torchvision import failed; attempting to rebuild torchvision from source to match torch..."
+        pip uninstall -y torchvision || true
+        # Ensure setuptools with pkg_resources (removed in setuptools>=71 by default)
+        # and packaging are available in the active env for --no-build-isolation builds.
+        pip install --root-user-action=ignore "setuptools<71" packaging
+        if [ "${TV_TAG}" = "main" ]; then
+            SRC="git+https://github.com/pytorch/vision.git"
+        else
+            SRC="git+https://github.com/pytorch/vision.git@${TV_TAG}"
+        fi
+        # Pass the custom index so pip can resolve 'torch' as a build dependency
+        # --no-build-isolation: reuse the already-installed torch instead of letting
+        # pip's isolated build subprocess try (and fail) to download it from PyPI.
+        pip install --root-user-action=ignore --no-deps --force-reinstall --no-binary :all: \
+            --no-build-isolation \
+            "${SRC}"
+        # Re-test import
+        if ! python - <<'PY'
+import sys
+try:
+    import torch, torchvision
+except Exception as e:
+    print("TOOLKIT_IMPORT_ERROR_AFTER_BUILD:", e, file=sys.stderr)
+    sys.exit(1)
+else:
+    print("TOOLKIT_OK_AFTER_BUILD")
+    sys.exit(0)
+PY
+        then
+            echo "Warning: torchvision import still failing after source build." >&2
+        fi
+    fi
+
+    python -c "import torch, torchvision; print(f'PyTorch {torch.__version__}, TorchVision {getattr(torchvision,'__version__','<unknown>')}, CUDA available: {torch.cuda.is_available()}')"
 
     mamba clean --all --yes
     conda clean --all --yes
+
+    # Install nvidia-cutlass so CUTLASS_PATH is not required at runtime
+    pip install --root-user-action=ignore nvidia-cutlass
 
     # Install openfold3 in editable mode (no-deps: deps already in conda env)
     cd /opt/openfold3

@@ -6,6 +6,7 @@
 FoldBench is a low-homology benchmark spanning proteins, nucleic acids, ligands, and six major interaction types, enabling assessments that were previously infeasible with task-specific datasets.
 
 ## 📢 Updates
++ **2026-03-03**: HelixFold3 integration scripts under `algorithms/helixfold3/` are now implemented (preprocess, inference runner, and postprocess).
 + **2025-12-31**: The evaluation results for RosettaFold3 (latest) have been updated.
 + **2025-12-05**: The evaluation results for Boltz-2 and OpenFold3-preview have been updated.
 + **2025-12-04**: FoldBench has been published in [Nature Communications](https://www.nature.com/articles/s41467-025-67127-3).

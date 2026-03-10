@@ -39,17 +39,18 @@ class PreProcess():
                 paired_msa = seq[seq_type].get("pairedMsa", "")
 
                 if unpaired_msa is not None:
-                    # Merge unpaired and paired MSAs
-                    merged_msa = unpaired_msa
+                    # Write MSA files to per-chain subdir with names Protenix expects
+                    msa_dir = os.path.join(input_dir, f"{target_name}_{chain_id}")
+                    os.makedirs(msa_dir, exist_ok=True)
+                    with open(os.path.join(msa_dir, "non_pairing.a3m"), "w") as f:
+                        f.write(unpaired_msa)
                     if paired_msa:
-                        merged_msa += "\n" + paired_msa
-
-                    # Write MSA to disk
-                    msa_path = os.path.join(input_dir, f"{target_name}_{chain_id}.a3m")
-                    os.makedirs(input_dir, exist_ok=True)
-                    with open(msa_path, "w") as f:
-                        f.write(merged_msa)
-                    tmp_seq["proteinChain"]["msa"] = msa_path
+                        with open(os.path.join(msa_dir, "pairing.a3m"), "w") as f:
+                            f.write(paired_msa)
+                    tmp_seq["proteinChain"]["msa"] = {
+                        "precomputed_msa_dir": msa_dir,
+                        "pairing_db": "uniprot",
+                    }
 
                 # add modification
                 tmp_seq["proteinChain"]['modifications']=[]

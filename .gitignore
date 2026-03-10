@@ -26,10 +26,11 @@ algorithms/helixfold/PaddleHelix/*
 
 algorithms/openfold3/openfold-3/*
 
-
-
+examples/outputs/*/*/*
+examples/outputs/**
 algorithms/Protenix/Protenix/release_data/*
 
+core
 
 *.sif
 *.pt

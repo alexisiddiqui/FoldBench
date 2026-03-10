@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # Takes argument --algorithm <algorithm_name> to specify which algorithm/folder to test.
-# Note Helixfold3 is still being developed and can be skipped for now.
 # Input jsons for testing can be found in /projects/u5fx/hussian-simulation-hdx/projects/FoldBench/examples/job_jsons
 # Example folder: /projects/u5fx/hussian-simulation-hdx/projects/FoldBench/examples
 
@@ -41,12 +40,6 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ALGO_DIR="$SCRIPT_DIR/$ALGO"
 JOB_JSONS_DIR="$SCRIPT_DIR/../examples/job_jsons"
-
-# Handle helixfold3 special case (skip, still in development)
-if [[ "$ALGO" == "helixfold3" ]]; then
-    echo "Helixfold3 is still being developed and can be skipped for now."
-    exit 0
-fi
 
 # Check if algorithm directory exists
 if [[ ! -d "$ALGO_DIR" ]]; then
@@ -148,8 +141,9 @@ fi
 
 # Live prediction test (if not in dry-run mode)
 if [[ "$DRY_RUN" -eq 0 ]]; then
-    echo "Running live prediction test for $ALGO (target: 5sbj-assembly1)..."
-    SMALLEST_JSON="$JOB_JSONS_DIR/5sbj-assembly1.json"
+    TEST_TARGET="7fwl-assembly1"
+    echo "Running live prediction test for $ALGO (target: $TEST_TARGET)..."
+    SMALLEST_JSON="$JOB_JSONS_DIR/${TEST_TARGET}.json"
 
     if [[ ! -f "$SMALLEST_JSON" ]]; then
         ERRORS+=("ERROR: Test target not found: $SMALLEST_JSON")
@@ -165,6 +159,10 @@ if [[ "$DRY_RUN" -eq 0 ]]; then
 import json
 json.dump([json.load(open('$SMALLEST_JSON'))], open('$TEMP_PRED_JSON', 'w'))
 "
+        HELIX_ENV=""
+        if [[ "$ALGO" == "helixfold3" ]]; then
+            HELIX_ENV="HF3_SEEDS=42 HF3_DIFF_BATCH_SIZE=1 HF3_INFER_TIMES=1 "
+        fi
         # Create output subdirectories (mirroring /algo/outputs layout)
         mkdir -p "$TEMP_OUTPUT_ROOT_DIR/input/$ALGO"
         mkdir -p "$TEMP_OUTPUT_ROOT_DIR/prediction/$ALGO"
@@ -177,8 +175,9 @@ json.dump([json.load(open('$SMALLEST_JSON'))], open('$TEMP_PRED_JSON', 'w'))
                 -B "$TEMP_PRED_JSON:/algo/alphafold3_inputs.json" \
                 -B "$TEMP_OUTPUT_ROOT_DIR:/algo/outputs" \
                 -B "$ALGO_DIR:/algo" \
+                -B "/projects/u5fx/hussian-simulation-hdx/projects/ATLAS_MSA/AF3_weights:/projects/u5fx/hussian-simulation-hdx/projects/ATLAS_MSA/AF3_weights" \
                 "$ALGO_DIR/container.sif" \
-                bash -c "chmod +x /algo/make_predictions.sh && cd /algo && ./make_predictions.sh \
+                bash -c "chmod +x /algo/make_predictions.sh && cd /algo && ${HELIX_ENV}./make_predictions.sh \
                     /algo/alphafold3_inputs.json \
                     /algo/outputs/input/$ALGO \
                     /algo/outputs/prediction/$ALGO \
@@ -190,7 +189,11 @@ json.dump([json.load(open('$SMALLEST_JSON'))], open('$TEMP_PRED_JSON', 'w'))
                     ERRORS+=("ERROR: prediction pipeline produced no prediction_reference.csv")
                 else
                     PRED_ROWS=$(( $(wc -l < "$PRED_CSV") - 1 ))
-                    echo "Live prediction test PASSED: prediction_reference.csv with $PRED_ROWS prediction rows."
+                    if [[ "$PRED_ROWS" -lt 1 ]]; then
+                        ERRORS+=("ERROR: prediction_reference.csv has no prediction rows")
+                    else
+                        echo "Live prediction test PASSED: prediction_reference.csv with $PRED_ROWS prediction rows."
+                    fi
                 fi
             else
                 ERRORS+=("ERROR: apptainer exec failed (make_predictions.sh exited non-zero)")

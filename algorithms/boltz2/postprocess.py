@@ -79,21 +79,28 @@ class PostProcess():
         for seed_dir in seed_dirs:
             seed = os.path.basename(seed_dir).replace("seed_", "")
 
-            # Find boltz_results_* subdirectory
+            # Find boltz_results_* subdirectories (one per yaml with per-file invocations)
             boltz_result_dirs = glob.glob(os.path.join(seed_dir, "boltz_results_*"))
             if not boltz_result_dirs:
                 print(f"Warning: no boltz_results_* dir found in {seed_dir}, skipping.")
                 continue
-            boltz_result_dir = boltz_result_dirs[0]
 
             for pdb_id in pdb_ids:
-                pred_dir = os.path.join(boltz_result_dir, "predictions", pdb_id)
-                if not os.path.exists(pred_dir):
-                    print(f"Warning: {pred_dir} not found, skipping.")
+                pred_dir = None
+                for brd in boltz_result_dirs:
+                    candidate = os.path.join(brd, "predictions", pdb_id)
+                    if os.path.exists(candidate):
+                        pred_dir = candidate
+                        break
+                if pred_dir is None:
+                    print(f"Warning: {pdb_id} not found in any boltz_results_* dir, skipping.")
                     continue
 
-                # Look for model CIF files
-                model_cifs = sorted(glob.glob(os.path.join(pred_dir, f"{pdb_id}_model_*.cif")))
+                # Look for model CIF files (exclude postprocessed from previous runs)
+                model_cifs = sorted(
+                    f for f in glob.glob(os.path.join(pred_dir, f"{pdb_id}_model_*.cif"))
+                    if "_postprocessed" not in os.path.basename(f)
+                )
                 for cif_file in model_cifs:
                     # Extract sample number from filename (e.g., "model_0" -> 0)
                     basename = os.path.basename(cif_file)

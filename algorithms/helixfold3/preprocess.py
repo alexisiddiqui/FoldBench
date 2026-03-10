@@ -6,6 +6,18 @@ Convert AF3 input JSON list to per-target HelixFold3 native JSON files.
 import argparse
 import json
 import os
+import sys
+
+# Import shared CCD exclusion set (algorithms/ is mounted at /algo/ inside container)
+try:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)) + "/..")
+    from filter_excluded_ligands import EXCLUDE_CCD as _HF3_EXCLUDE_CCD
+except Exception:
+    # Fallback: hardcoded crystallization aids list
+    _HF3_EXCLUDE_CCD = {
+        "SO4", "GOL", "EDO", "PO4", "ACT", "PEG", "DMS", "TRS",
+        "PGE", "PG4", "FMT", "EPE", "MPD", "MES", "CD", "IOD",
+    }
 
 
 class PreProcess():
@@ -85,10 +97,13 @@ class PreProcess():
                 ccd_codes = seq_content.get("ccdCodes", [])
                 if not ccd_codes:
                     continue
+                ccd = str(ccd_codes[0])
+                if ccd in _HF3_EXCLUDE_CCD:
+                    continue  # skip unsupported/excluded CCD
                 entities.append(
                     {
                         "type": "ligand",
-                        "ccd": str(ccd_codes[0]),
+                        "ccd": ccd,
                         "count": self._count_from_id(seq_content.get("id")),
                     }
                 )
